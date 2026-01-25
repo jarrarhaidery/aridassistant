@@ -1,6 +1,4 @@
-// app/main/layout.tsx
-import Sidebar from "@/components/Sidebar";
-
+// app/main/layout.tsx (MAIN LAYOUT - Glass container, NO sidebar yet)
 export default function MainLayout({
   children,
 }: {
@@ -16,14 +14,8 @@ export default function MainLayout({
 
       {/* main glass container */}
       <div className="relative z-10 flex items-center justify-center h-full px-4">
-        <div className="w-[95%] max-w-6xl h-[90%] bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl flex overflow-hidden">
-          {/* Sidebar alag component */}
-          <Sidebar />
-
-          {/* Chat area */}
-          <main className="flex-1 p-6 bg-gray-50 rounded-r-3xl overflow-hidden">
-            {children}
-          </main>
+        <div className="w-[95%] max-w-7xl h-[90%] bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl overflow-hidden">
+          {children}
         </div>
       </div>
     </div>

@@ -1,10 +1,10 @@
-// app/layout.tsx
-import "./globals.css";
+// app/layout.tsx (ROOT LAYOUT - MUST HAVE HTML/BODY)
 import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Arid AI Assistant",
-  description: "AI Powered University Assistant",
+  title: "Arid Assistant",
+  description: "PMAS Arid Agriculture University Chat Assistant",
 };
 
 export default function RootLayout({
@@ -14,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-white">{children}</body>
+      <body className="antialiased">
+        {children}
+      </body>
     </html>
   );
 }

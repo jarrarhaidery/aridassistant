@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
-import bcrypt from "bcrypt";
+
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000/api";
 
 export async function POST(req: Request) {
   try {
@@ -13,13 +13,23 @@ export async function POST(req: Request) {
       );
     }
 
-    // 🔐 HASH PASSWORD
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Call FastAPI backend
+    const response = await fetch(`${BACKEND_URL}/auth/signup`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, email, password }),
+    });
 
-    await pool.query(
-      "INSERT INTO users (name, email, password) VALUES ($1, $2, $3)",
-      [name, email, hashedPassword]
-    );
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: data.detail || "Signup failed" },
+        { status: response.status }
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
