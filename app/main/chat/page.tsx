@@ -1,6 +1,10 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import VoiceRecorder from "@/components/VoiceRecorder";
+import ImageUpload from "@/components/ImageUpload";
+import ReactMarkdown from "react-markdown";
 
 type Message = {
   id?: number;
@@ -22,17 +26,16 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 export default function ChatPage() {
   const router = useRouter();
   
-  // Debug: Log API URL on component mount
-  useEffect(() => {
-    console.log("API_URL configured as:", API_URL);
-  }, []);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -47,9 +50,6 @@ export default function ChatPage() {
     const token = localStorage.getItem("access_token");
     const userData = localStorage.getItem("user");
 
-    console.log("Auth check - Token:", token ? "exists" : "missing");
-    console.log("Auth check - User data:", userData);
-
     if (!token || !userData) {
       router.push("/auth/login");
       return;
@@ -57,8 +57,8 @@ export default function ChatPage() {
 
     try {
       const parsedUser = JSON.parse(userData);
-      console.log("Parsed user:", parsedUser);
       setUser(parsedUser);
+      setIsAdmin(parsedUser.role === "admin");
       loadConversations(parsedUser.id);
     } catch (error) {
       console.error("Failed to parse user data:", error);
@@ -69,26 +69,13 @@ export default function ChatPage() {
   const loadConversations = async (userId: number) => {
     try {
       const token = localStorage.getItem("access_token");
-      const url = `${API_URL}/chat/conversations/${userId}`;
-      console.log("Fetching conversations from:", url);
-      
-      const response = await fetch(url, {
+      const response = await fetch(`${API_URL}/chat/conversations/${userId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("Response status:", response.status);
-
       if (response.ok) {
         const data = await response.json();
-        console.log("Loaded conversations:", data);
         setConversations(Array.isArray(data) ? data : []);
-      } else if (response.status === 404) {
-        console.log("No conversations found (404), setting empty array");
-        setConversations([]);
-      } else {
-        const errorText = await response.text();
-        console.error("Failed to load conversations:", response.status, errorText);
-        setConversations([]);
       }
     } catch (error) {
       console.error("Failed to load conversations:", error);
@@ -99,12 +86,9 @@ export default function ChatPage() {
   const loadConversation = async (conversationId: number) => {
     try {
       const token = localStorage.getItem("access_token");
-      const response = await fetch(
-        `${API_URL}/chat/conversations/${conversationId}/messages`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const response = await fetch(`${API_URL}/chat/conversations/${conversationId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -120,6 +104,8 @@ export default function ChatPage() {
     setMessages([]);
     setCurrentConversationId(null);
     setInput("");
+    setSelectedImage(null);
+    setImagePreview(null);
   };
 
   const deleteConversation = async (conversationId: number) => {
@@ -145,45 +131,46 @@ export default function ChatPage() {
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
-    const userMsg: Message = { role: "user", content: input };
+    const userMsg: Message = { 
+      role: "user", 
+      content: selectedImage ? `[Image attached] ${input}` : input 
+    };
     setMessages((prev) => [...prev, userMsg]);
+    
     const currentInput = input;
+    const currentImage = selectedImage;
+    
     setInput("");
+    setSelectedImage(null);
+    setImagePreview(null);
     setLoading(true);
 
     try {
       const token = localStorage.getItem("access_token");
-
-      console.log("Sending message:", {
-        message: currentInput,
-        user_id: user?.id,
-        conversation_id: currentConversationId,
-      });
+      const formData = new FormData();
+      
+      formData.append("message", currentInput);
+      formData.append("user_id", user?.id.toString());
+      if (currentConversationId) {
+        formData.append("conversation_id", currentConversationId.toString());
+      }
+      if (currentImage) {
+        formData.append("image", currentImage);
+      }
 
       const response = await fetch(`${API_URL}/chat/message`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          message: currentInput,
-          user_id: user?.id,
-          conversation_id: currentConversationId,
-        }),
+        body: formData,
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("API Error:", response.status, errorData);
-        throw new Error(`Failed to get response: ${response.status}`);
+        throw new Error(`Failed: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log("API Response:", data);
-      console.log("Conversation ID from response:", data.conversation_id);
-      console.log("Current conversation ID:", currentConversationId);
-
       const aiMsg: Message = {
         role: "assistant",
         content: data.response || "I'm here to help!",
@@ -192,14 +179,10 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, aiMsg]);
 
       if (!currentConversationId && data.conversation_id) {
-        console.log("Setting new conversation ID:", data.conversation_id);
         setCurrentConversationId(data.conversation_id);
         await loadConversations(user.id);
       } else if (currentConversationId) {
-        console.log("Refreshing conversations for existing chat");
         await loadConversations(user.id);
-      } else {
-        console.error("WARNING: No conversation_id in response!", data);
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -211,6 +194,15 @@ export default function ChatPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleVoiceTranscription = (text: string) => {
+    setInput(text);
+  };
+
+  const handleImageSelected = (file: File, preview: string) => {
+    setSelectedImage(file);
+    setImagePreview(preview);
   };
 
   const handleLogout = () => {
@@ -240,8 +232,14 @@ export default function ChatPage() {
       >
         <div className="p-5 border-b border-gray-700/50">
           <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center font-bold text-lg shadow-lg">
-              A
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg p-1">
+              <Image 
+                src="/arid-logo.png" 
+                alt="Arid University Logo" 
+                width={40} 
+                height={40}
+                className="object-contain"
+              />
             </div>
             <div>
               <h1 className="text-xl font-bold">Arid Assistant</h1>
@@ -340,13 +338,25 @@ export default function ChatPage() {
             <div>
               <h2 className="text-lg font-bold text-gray-800">
                 {currentConversationId
-                  ? conversations.find((c) => c.id === currentConversationId)?.title ||
-                    "Chat"
+                  ? conversations.find((c) => c.id === currentConversationId)?.title || "Chat"
                   : "New Chat"}
               </h2>
               <p className="text-xs text-gray-500">Ask anything about PMAS Arid University</p>
             </div>
           </div>
+          
+          {/* Admin Dashboard Button */}
+          {isAdmin && (
+            <button
+              onClick={() => router.push("/admin/dashboard")}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-all shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Admin Dashboard
+            </button>
+          )}
         </div>
 
         {/* Messages */}
@@ -400,7 +410,33 @@ export default function ChatPage() {
                     : "bg-white text-gray-800 rounded-bl-none border border-gray-200"
                 }`}
               >
-                <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                {msg.role === "user" ? (
+                  <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    <ReactMarkdown
+                      components={{
+                        strong: ({node, ...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                        em: ({node, ...props}) => <em className="italic text-gray-700" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc ml-4 my-2" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal ml-4 my-2" {...props} />,
+                        li: ({node, ...props}) => <li className="my-1" {...props} />,
+                        p: ({node, ...props}) => <p className="my-2 leading-relaxed" {...props} />,
+                        h1: ({node, ...props}) => <h1 className="text-xl font-bold my-2" {...props} />,
+                        h2: ({node, ...props}) => <h2 className="text-lg font-bold my-2" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-base font-bold my-2" {...props} />,
+                        code: ({node, inline, ...props}: any) => 
+                          inline ? (
+                            <code className="bg-gray-100 px-1 py-0.5 rounded text-sm" {...props} />
+                          ) : (
+                            <code className="block bg-gray-100 p-2 rounded my-2 text-sm" {...props} />
+                          ),
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -423,23 +459,42 @@ export default function ChatPage() {
 
         {/* Input */}
         <div className="p-6 bg-white/80 backdrop-blur-sm border-t border-gray-200">
+          {/* Image Preview */}
+          {imagePreview && (
+            <div className="mb-3 flex items-center gap-3 p-3 bg-purple-50 rounded-xl border border-purple-200 max-w-5xl mx-auto">
+              <img 
+                src={imagePreview} 
+                alt="Preview" 
+                className="w-16 h-16 object-cover rounded-lg"
+              />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-700">Image attached</p>
+                <p className="text-xs text-gray-500">Ask a question about this image</p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedImage(null);
+                  setImagePreview(null);
+                }}
+                className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           <div className="flex gap-3 max-w-5xl mx-auto items-end">
-            {/* Attachment Button (for OCR/Images) */}
-            <button
-              className="p-3.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-2xl transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed group"
+            {/* Image Upload */}
+            <ImageUpload 
+              onImageSelected={handleImageSelected}
               disabled={loading}
-              title="Upload image (OCR coming soon)"
-            >
-              <svg className="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+            />
 
             {/* Input Field */}
             <input
               type="text"
               className="flex-1 border-2 border-gray-300 focus:border-green-500 rounded-2xl p-4 focus:ring-4 focus:ring-green-500/20 outline-none text-gray-900 bg-white shadow-sm transition-all placeholder-gray-400"
-              placeholder="Type your message..."
+              placeholder={imagePreview ? "Ask about the image..." : "Type your message..."}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -451,16 +506,11 @@ export default function ChatPage() {
               disabled={loading}
             />
 
-            {/* Voice Input Button (Whisper) */}
-            <button
-              className="p-3.5 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-2xl transition-all hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed group"
+            {/* Voice Input */}
+            <VoiceRecorder 
+              onTranscription={handleVoiceTranscription}
               disabled={loading}
-              title="Voice input (Whisper coming soon)"
-            >
-              <svg className="w-6 h-6 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-            </button>
+            />
 
             {/* Send Button */}
             <button
@@ -480,9 +530,6 @@ export default function ChatPage() {
               )}
             </button>
           </div>
-          <p className="text-xs text-gray-500 text-center mt-3">
-            💡 Voice input and image OCR coming soon!
-          </p>
         </div>
       </div>
 

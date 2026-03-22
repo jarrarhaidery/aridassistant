@@ -18,19 +18,18 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setError("");
+    setSuccess("");
 
     if (!email || !password || (mode === "signup" && !name)) {
-      alert("Please fill all required fields");
+      setError("Please fill all required fields");
       return;
     }
-
-    if (password.length > 72) {
-    alert("Password must be 72 characters or less");
-    return;
-  }
 
     setLoading(true);
 
@@ -51,21 +50,21 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
         const data = await res.json();
 
         if (!res.ok) {
-          alert(data.error || "Signup failed");
+          setError(data.error || "Signup failed. Please try again.");
           setLoading(false);
           return;
         }
 
-        alert("Account created successfully! Please login.");
-        router.push("/auth/login");
+        setSuccess("Account created successfully! Redirecting...");
+        setTimeout(() => {
+          router.push("/auth/login");
+        }, 1500);
       } catch (error) {
-        alert("Something went wrong");
+        setError("Connection error. Please check your internet.");
         console.error(error);
-      } finally {
         setLoading(false);
       }
     } else {
-      // LOGIN
       try {
         const res = await fetch("/api/auth/login", {
           method: "POST",
@@ -81,28 +80,28 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
         const data = await res.json();
 
         if (!res.ok) {
-          alert(data.error || "Login failed");
+          setError(data.error || "Invalid email or password");
           setLoading(false);
           return;
         }
 
-        // Store JWT token and user data in localStorage
         if (data.access_token) {
           localStorage.setItem("access_token", data.access_token);
           localStorage.setItem("user", JSON.stringify(data.user));
-          
-          // Optional: Keep the cookie for compatibility
           document.cookie = "logged-in=true; path=/; max-age=86400";
           
-          // Redirect to chat
-          router.push("/main/chat");
+          if (data.user.role === 'admin') {
+            router.push("/admin/dashboard");
+          } else {
+            router.push("/main/chat");
+          }
         } else {
-          alert("Login failed: No token received");
+          setError("Login failed. No token received.");
+          setLoading(false);
         }
       } catch (error) {
-        alert("Something went wrong");
+        setError("Connection error. Please try again.");
         console.error(error);
-      } finally {
         setLoading(false);
       }
     }
@@ -110,25 +109,25 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
 
   return (
     <div className="md:flex w-full max-w-4xl bg-white rounded-3xl overflow-hidden shadow-xl">
-      {/* Left Section */}
       <div className="hidden md:flex md:w-1/2 relative">
         <img
-          src="/student.jpg.png"
+          src="/uiit.jpg"
           alt="Student"
           className="w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-b from-green-700/70 to-black/20"></div>
 
-        <div className="absolute bottom-90 left-8 text-white drop-shadow-lg">
-          <h2 className="text-3xl font-bold">Grow With ARID Assistant</h2>
-          <p className="text-sm font-bold text-white/90 max-w-xs mt-2">
-            Personalized study help, guidance, and university information — all
-            in one intelligent assistant.
+        
+        <div className="absolute inset-0 flex items-center justify-center text-white drop-shadow-lg p-8">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold">Arid Assistant</h2>
+            <p className="text-sm font-bold text-white/90 max-w-xs mt-2 mx-auto">
+            Your intelligent guide to university life, academic support, and campus information.
           </p>
+        </div>
         </div>
       </div>
 
-      {/* Right Section */}
       <div className="w-full md:w-1/2 p-10 bg-white">
         <div className="flex items-center gap-3 mb-8">
           <img src="/arid-logo.png" className="w-12 h-12" alt="ARID Logo" />
@@ -142,12 +141,36 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
           {mode === "login" ? "Sign in to your account" : "Create your account"}
         </h2>
 
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-r-lg animate-slideDown">
+            <div className="flex items-center gap-3">
+              <span className="text-red-500 text-xl flex-shrink-0">⚠️</span>
+              <p className="text-sm font-medium text-red-800 flex-1">{error}</p>
+              <button
+                onClick={() => setError("")}
+                className="text-red-400 hover:text-red-600 transition-colors text-lg"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 p-4 bg-green-50 border-l-4 border-green-500 rounded-r-lg animate-slideDown">
+            <div className="flex items-center gap-3">
+              <span className="text-green-500 text-xl flex-shrink-0">✓</span>
+              <p className="text-sm font-medium text-green-800 flex-1">{success}</p>
+            </div>
+          </div>
+        )}
+
         <form className="space-y-5" onSubmit={handleSubmit}>
           {mode === "signup" && (
             <input
               type="text"
               placeholder="Full Name"
-              className="w-full border border-gray-300 rounded-lg p-3 text-sm text-black bg-white placeholder-gray-400 focus:ring-2 focus:ring-green-400"
+              className="w-full border border-gray-300 rounded-lg p-3 text-sm text-black bg-white placeholder-gray-400 focus:ring-2 focus:ring-green-400 focus:border-green-400 outline-none"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={loading}
@@ -157,7 +180,7 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
           <input
             type="email"
             placeholder="Email address"
-            className="w-full border border-gray-300 rounded-lg p-3 text-sm text-black bg-white placeholder-gray-400 focus:ring-2 focus:ring-green-400"
+            className="w-full border border-gray-300 rounded-lg p-3 text-sm text-black bg-white placeholder-gray-400 focus:ring-2 focus:ring-green-400 focus:border-green-400 outline-none"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={loading}
@@ -166,7 +189,7 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
           <input
             type="password"
             placeholder="Password"
-            className="w-full border border-gray-300 rounded-lg p-3 text-sm text-black bg-white placeholder-gray-400 focus:ring-2 focus:ring-green-400"
+            className="w-full border border-gray-300 rounded-lg p-3 text-sm text-black bg-white placeholder-gray-400 focus:ring-2 focus:ring-green-400 focus:border-green-400 outline-none"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={loading}
@@ -178,7 +201,7 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
                 <input type="checkbox" className="w-4 h-4" />
                 Keep me logged in
               </label>
-              <Link href="#" className="text-green-600">
+              <Link href="#" className="text-green-600 hover:text-green-700">
                 Forgot Password?
               </Link>
             </div>
@@ -197,20 +220,36 @@ export default function AuthCard({ mode = "login" }: AuthCardProps) {
           {mode === "login" ? (
             <>
               Don't have an account?{" "}
-              <Link href="/auth/signup" className="text-green-600 font-semibold">
+              <Link href="/auth/signup" className="text-green-600 font-semibold hover:text-green-700">
                 Create New Account
               </Link>
             </>
           ) : (
             <>
               Already have an account?{" "}
-              <Link href="/auth/login" className="text-green-600 font-semibold">
+              <Link href="/auth/login" className="text-green-600 font-semibold hover:text-green-700">
                 Login
               </Link>
             </>
           )}
         </div>
       </div>
+
+      <style jsx>{`
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-slideDown {
+          animation: slideDown 0.3s ease-out;
+        }
+      `}</style>
     </div>
   );
 }
